@@ -13,7 +13,7 @@ import com.revenuecat.purchases.CustomerInfo
 
 // MARK: - Platform-Agnostic Data Models
 
-public struct PurchasePackageData: Codable, Sendable {
+public struct PurchasePackageData: Sendable {
     public let identifier: String
     public let productId: String
     public let priceString: String
@@ -43,7 +43,7 @@ public struct PurchasePackageData: Codable, Sendable {
     #endif
 }
 
-public struct CustomerInfoData: Codable, Sendable {
+public struct CustomerInfoData: Sendable {
     public let userId: String
     public let activeEntitlements: [String]
     public let allPurchasedProductIds: [String]
@@ -71,7 +71,7 @@ public struct CustomerInfoData: Codable, Sendable {
     #endif
 }
 
-public struct OfferingsData: Codable, Sendable {
+public struct OfferingsData: Sendable {
     public let currentOffering: String?
     public let allOfferings: [String]
 
