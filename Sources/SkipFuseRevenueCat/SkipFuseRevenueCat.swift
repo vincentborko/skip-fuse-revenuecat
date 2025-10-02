@@ -9,6 +9,7 @@ import com.revenuecat.purchases.LogLevel
 import com.revenuecat.purchases.Package
 import com.revenuecat.purchases.PurchaseParams
 import com.revenuecat.purchases.CustomerInfo
+import com.revenuecat.purchases.Offerings
 #endif
 
 // MARK: - Platform-Agnostic Data Models
@@ -65,8 +66,8 @@ public struct CustomerInfoData: Sendable {
     #else
     init(info: CustomerInfo) {
         self.userId = info.originalAppUserId
-        self.activeEntitlements = Array(info.entitlements.active.keys)
-        self.allPurchasedProductIds = Array(info.allPurchasedProductIdentifiers)
+        self.activeEntitlements = info.entitlements.active.keys.toList()
+        self.allPurchasedProductIds = info.allPurchasedProductIds.toList()
     }
     #endif
 }
@@ -94,11 +95,11 @@ public struct RevenueCat: Sendable {
         Purchases.logLevel = .debug
         Purchases.configure(withAPIKey: apiKey)
         #else
-        let activity = ProcessInfo.processInfo.androidActivity
-        let builder = PurchasesConfiguration.Builder(activity, apiKey)
+        let context = ProcessInfo.processInfo.androidContext
+        let builder = PurchasesConfiguration.Builder(context, apiKey)
         let config = builder.build()
         Purchases.configure(config)
-        Purchases.logLevel = LogLevel.DEBUG
+        Purchases.sharedInstance.logLevel = LogLevel.DEBUG
         #endif
     }
 
@@ -107,7 +108,7 @@ public struct RevenueCat: Sendable {
         let _ = try await Purchases.shared.logIn(userId)
         #else
         return try await withCheckedThrowingContinuation { continuation in
-            Purchases.sharedInstance.logIn(
+            Purchases.sharedInstance.logInWith(
                 userId,
                 onError: { error in
                     continuation.resume(throwing: StoreError.unknown)
@@ -124,16 +125,7 @@ public struct RevenueCat: Sendable {
         #if !SKIP
         let _ = try await Purchases.shared.logOut()
         #else
-        return try await withCheckedThrowingContinuation { continuation in
-            Purchases.sharedInstance.logOut(
-                onError: { error in
-                    continuation.resume(throwing: StoreError.unknown)
-                },
-                onSuccess: { _ in
-                    continuation.resume(returning: ())
-                }
-            )
-        }
+        Purchases.sharedInstance.logOut()
         #endif
     }
 
@@ -146,18 +138,13 @@ public struct RevenueCat: Sendable {
         )
         #else
         return try await withCheckedThrowingContinuation { continuation in
-            Purchases.sharedInstance.getOfferings(
-                onError: { error in
-                    continuation.resume(throwing: StoreError.noProductsAvailable)
-                },
-                onSuccess: { offerings in
-                    let data = OfferingsData(
-                        currentOffering: offerings.current?.identifier,
-                        allOfferings: Array(offerings.all.keys)
-                    )
-                    continuation.resume(returning: data)
-                }
-            )
+            Purchases.sharedInstance.getOfferingsWith { offerings in
+                let data = OfferingsData(
+                    currentOffering: offerings.current?.identifier,
+                    allOfferings: offerings.all.keys.toList()
+                )
+                continuation.resume(returning: data)
+            }
         }
         #endif
     }
@@ -171,22 +158,17 @@ public struct RevenueCat: Sendable {
         return packages
         #else
         return try await withCheckedThrowingContinuation { continuation in
-            Purchases.sharedInstance.getOfferings(
-                onError: { error in
-                    continuation.resume(throwing: StoreError.noProductsAvailable)
-                },
-                onSuccess: { offerings in
-                    do {
-                        guard let packages = try self.extractPackages(from: offerings, offeringIdentifier: offeringIdentifier) else {
-                            continuation.resume(throwing: StoreError.noProductsAvailable)
-                            return
-                        }
-                        continuation.resume(returning: packages)
-                    } catch {
-                        continuation.resume(throwing: error)
+            Purchases.sharedInstance.getOfferingsWith { offerings in
+                do {
+                    guard let packages = try self.extractPackages(from: offerings, offeringIdentifier: offeringIdentifier) else {
+                        continuation.resume(throwing: StoreError.noProductsAvailable)
+                        return
                     }
+                    continuation.resume(returning: packages)
+                } catch {
+                    continuation.resume(throwing: error)
                 }
-            )
+            }
         }
         #endif
     }
@@ -207,34 +189,29 @@ public struct RevenueCat: Sendable {
         return CustomerInfoData(info: customerInfo)
         #else
         return try await withCheckedThrowingContinuation { continuation in
-            let activity = ProcessInfo.processInfo.androidActivity
+            let activity = ProcessInfo.processInfo.androidContext
 
-            Purchases.sharedInstance.getOfferings(
-                onError: { error in
+            Purchases.sharedInstance.getOfferingsWith { offerings in
+                guard let pkg = self.findPackage(in: offerings, productId: packageData.productId) else {
                     continuation.resume(throwing: StoreError.packageNotFound)
-                },
-                onSuccess: { offerings in
-                    guard let pkg = self.findPackage(in: offerings, productId: packageData.productId) else {
-                        continuation.resume(throwing: StoreError.packageNotFound)
-                        return
-                    }
-
-                    let params = PurchaseParams.Builder(activity, pkg).build()
-                    Purchases.sharedInstance.purchase(
-                        params,
-                        onError: { error, userCancelled in
-                            if userCancelled {
-                                continuation.resume(throwing: StoreError.userCancelled)
-                            } else {
-                                continuation.resume(throwing: StoreError.unknown)
-                            }
-                        },
-                        onSuccess: { _, customerInfo in
-                            continuation.resume(returning: CustomerInfoData(info: customerInfo))
-                        }
-                    )
+                    return
                 }
-            )
+
+                let params = PurchaseParams.Builder(activity, pkg).build()
+                Purchases.sharedInstance.purchaseWith(
+                    params,
+                    onError: { error, userCancelled in
+                        if userCancelled {
+                            continuation.resume(throwing: StoreError.userCancelled)
+                        } else {
+                            continuation.resume(throwing: StoreError.unknown)
+                        }
+                    },
+                    onSuccess: { _, customerInfo in
+                        continuation.resume(returning: CustomerInfoData(info: customerInfo))
+                    }
+                )
+            }
         }
         #endif
     }
@@ -245,7 +222,7 @@ public struct RevenueCat: Sendable {
         return CustomerInfoData(info: customerInfo)
         #else
         return try await withCheckedThrowingContinuation { continuation in
-            Purchases.sharedInstance.restorePurchases(
+            Purchases.sharedInstance.restorePurchasesWith(
                 onError: { error in
                     continuation.resume(throwing: StoreError.noPurchasesFound)
                 },
@@ -263,7 +240,7 @@ public struct RevenueCat: Sendable {
         return CustomerInfoData(info: customerInfo)
         #else
         return try await withCheckedThrowingContinuation { continuation in
-            Purchases.sharedInstance.getCustomerInfo(
+            Purchases.sharedInstance.getCustomerInfoWith(
                 onError: { error in
                     continuation.resume(throwing: StoreError.unknown)
                 },
@@ -301,7 +278,7 @@ public struct RevenueCat: Sendable {
         return nil
         #else
         // Search all offerings
-        for offering in offerings.all.values {
+        for offering in offerings.all.values.toList() {
             if let found = offering.availablePackages.first(where: { $0.product.id == productId }) {
                 return found
             }
