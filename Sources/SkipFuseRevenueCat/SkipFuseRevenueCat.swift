@@ -1,10 +1,8 @@
+#if !SKIP_BRIDGE
 import Foundation
-
-#if canImport(RevenueCat)
+#if !SKIP
 import RevenueCat
-#endif
-
-#if SKIP
+#else
 import com.revenuecat.purchases.Purchases
 import com.revenuecat.purchases.PurchasesConfiguration
 import com.revenuecat.purchases.LogLevel
@@ -27,6 +25,22 @@ public struct PurchasePackageData: Codable, Sendable {
         self.priceString = priceString
         self.price = price
     }
+
+    #if !SKIP
+    init(package: Package) {
+        self.identifier = package.identifier
+        self.productId = package.storeProduct.productIdentifier
+        self.priceString = package.storeProduct.localizedPriceString
+        self.price = Double(truncating: package.storeProduct.price as NSNumber)
+    }
+    #else
+    init(package: Package) {
+        self.identifier = package.identifier
+        self.productId = package.product.id
+        self.priceString = package.product.price.formatted
+        self.price = Double(package.product.price.amountMicros) / 1_000_000.0
+    }
+    #endif
 }
 
 public struct CustomerInfoData: Codable, Sendable {
@@ -39,6 +53,22 @@ public struct CustomerInfoData: Codable, Sendable {
         self.activeEntitlements = activeEntitlements
         self.allPurchasedProductIds = allPurchasedProductIds
     }
+
+    #if !SKIP
+    init(info: CustomerInfo) {
+        self.userId = info.originalAppUserId
+        self.activeEntitlements = info.entitlements.all.values
+            .filter { $0.isActive }
+            .map { $0.identifier }
+        self.allPurchasedProductIds = Array(info.allPurchasedProductIdentifiers)
+    }
+    #else
+    init(info: CustomerInfo) {
+        self.userId = info.originalAppUserId
+        self.activeEntitlements = Array(info.entitlements.active.keys)
+        self.allPurchasedProductIds = Array(info.allPurchasedProductIdentifiers)
+    }
+    #endif
 }
 
 public struct OfferingsData: Codable, Sendable {
@@ -54,39 +84,32 @@ public struct OfferingsData: Codable, Sendable {
 // MARK: - RevenueCat Service
 
 /// RevenueCat service for purchases and subscriptions
-public class RevenueCatService {
-    public static let shared = RevenueCatService()
+public struct RevenueCat: Sendable {
+    public static let shared = RevenueCat()
 
     private init() {}
 
     public func configure(apiKey: String) {
-        logger.info("🔧 [RevenueCat] configure called")
-        #if !SKIP && canImport(RevenueCat)
+        #if !SKIP
         Purchases.logLevel = .debug
         Purchases.configure(withAPIKey: apiKey)
-        logger.info("✅ [RevenueCat] Configuration complete (iOS)")
-        #elseif SKIP
-        logger.info("🔧 [RevenueCat] Starting configuration for Android...")
+        #else
         let activity = ProcessInfo.processInfo.androidActivity
         let builder = PurchasesConfiguration.Builder(activity, apiKey)
         let config = builder.build()
         Purchases.configure(config)
         Purchases.logLevel = LogLevel.DEBUG
-        logger.info("✅ [RevenueCat] Configuration complete (Android)")
         #endif
     }
 
     public func loginUser(userId: String) async throws {
-        logger.info("✅ [RevenueCat] Logging into RevenueCat with user ID: \(userId)")
-        #if !SKIP && canImport(RevenueCat)
+        #if !SKIP
         let _ = try await Purchases.shared.logIn(userId)
-        #elseif SKIP
+        #else
         return try await withCheckedThrowingContinuation { continuation in
-            let purchases = Purchases.sharedInstance
-            purchases.logIn(
+            Purchases.sharedInstance.logIn(
                 userId,
                 onError: { error in
-                    logger.info("❌ [RevenueCat] Login error: \(error.message)")
                     continuation.resume(throwing: StoreError.unknown)
                 },
                 onSuccess: { _, _ in
@@ -98,14 +121,12 @@ public class RevenueCatService {
     }
 
     public func logoutUser() async throws {
-        #if !SKIP && canImport(RevenueCat)
+        #if !SKIP
         let _ = try await Purchases.shared.logOut()
-        #elseif SKIP
+        #else
         return try await withCheckedThrowingContinuation { continuation in
-            let purchases = Purchases.sharedInstance
-            purchases.logOut(
+            Purchases.sharedInstance.logOut(
                 onError: { error in
-                    logger.info("❌ [RevenueCat] Logout error: \(error.message)")
                     continuation.resume(throwing: StoreError.unknown)
                 },
                 onSuccess: { _ in
@@ -117,18 +138,15 @@ public class RevenueCatService {
     }
 
     public func loadOfferings() async throws -> OfferingsData {
-        #if !SKIP && canImport(RevenueCat)
+        #if !SKIP
         let offerings = try await Purchases.shared.offerings()
-
         return OfferingsData(
             currentOffering: offerings.current?.identifier,
             allOfferings: Array(offerings.all.keys)
         )
-        #elseif SKIP
+        #else
         return try await withCheckedThrowingContinuation { continuation in
-            let purchases = Purchases.sharedInstance
-
-            purchases.getOfferings(
+            Purchases.sharedInstance.getOfferings(
                 onError: { error in
                     continuation.resume(throwing: StoreError.noProductsAvailable)
                 },
@@ -141,126 +159,42 @@ public class RevenueCatService {
                 }
             )
         }
-        #else
-        throw StoreError.unknown
         #endif
     }
 
-    public func loadProducts() async throws -> [PurchasePackageData] {
-        #if !SKIP && canImport(RevenueCat)
+    public func loadProducts(offeringIdentifier: String? = nil) async throws -> [PurchasePackageData] {
+        #if !SKIP
         let offerings = try await Purchases.shared.offerings()
-        var packages: [PurchasePackageData] = []
-
-        // Get current offering packages
-        if let currentOffering = offerings.current {
-            packages.append(contentsOf: currentOffering.availablePackages.map { convertPackage($0) })
-        }
-
-        // Get subscription offering packages
-        if let subscriptionOffering = offerings.offering(identifier: "Subscription") {
-            packages.append(contentsOf: subscriptionOffering.availablePackages.map { convertPackage($0) })
-        }
-
-        guard !packages.isEmpty else {
+        guard let packages = try extractPackages(from: offerings, offeringIdentifier: offeringIdentifier) else {
             throw StoreError.noProductsAvailable
         }
-
         return packages
-        #elseif SKIP
-        logger.info("🔍 [RevenueCat] loadProducts() called")
-
+        #else
         return try await withCheckedThrowingContinuation { continuation in
-            let purchases = Purchases.sharedInstance
-            logger.info("📦 [RevenueCat] Got Purchases instance")
-
-            purchases.getOfferings(
+            Purchases.sharedInstance.getOfferings(
                 onError: { error in
-                    logger.info("❌ [RevenueCat] Error loading products: \(error.message)")
                     continuation.resume(throwing: StoreError.noProductsAvailable)
                 },
                 onSuccess: { offerings in
-                    logger.info("✅ [RevenueCat] Got offerings")
-                    logger.info("📊 [RevenueCat] Current offering: \(offerings.current?.identifier ?? "none")")
-                    logger.info("📊 [RevenueCat] Total offerings: \(offerings.all.count)")
-
-                    var packages: [PurchasePackageData] = []
-
-                    // Get current offering packages
-                    if let current = offerings.current {
-                        logger.info("📦 [RevenueCat] Processing current offering: \(current.identifier)")
-                        logger.info("📦 [RevenueCat] Available packages: \(current.availablePackages.count)")
-
-                        for pkg in current.availablePackages {
-                            logger.info("  💰 [RevenueCat] Package: \(pkg.identifier)")
-                            logger.info("     [RevenueCat] Product ID: \(pkg.product.id)")
-                            logger.info("     [RevenueCat] Price: \(pkg.product.price.formatted)")
-
-                            packages.append(PurchasePackageData(
-                                identifier: pkg.identifier,
-                                productId: pkg.product.id,
-                                priceString: pkg.product.price.formatted,
-                                price: Double(pkg.product.price.amountMicros) / 1_000_000.0
-                            ))
+                    do {
+                        guard let packages = try self.extractPackages(from: offerings, offeringIdentifier: offeringIdentifier) else {
+                            continuation.resume(throwing: StoreError.noProductsAvailable)
+                            return
                         }
+                        continuation.resume(returning: packages)
+                    } catch {
+                        continuation.resume(throwing: error)
                     }
-
-                    // Get subscription offering packages
-                    if let subscription = offerings.all["Subscription"] {
-                        logger.info("📦 [RevenueCat] Processing Subscription offering")
-                        logger.info("📦 [RevenueCat] Available packages: \(subscription.availablePackages.count)")
-
-                        for pkg in subscription.availablePackages {
-                            logger.info("  💰 [RevenueCat] Package: \(pkg.identifier)")
-                            logger.info("     [RevenueCat] Product ID: \(pkg.product.id)")
-                            logger.info("     [RevenueCat] Price: \(pkg.product.price.formatted)")
-
-                            packages.append(PurchasePackageData(
-                                identifier: pkg.identifier,
-                                productId: pkg.product.id,
-                                priceString: pkg.product.price.formatted,
-                                price: Double(pkg.product.price.amountMicros) / 1_000_000.0
-                            ))
-                        }
-                    }
-
-                    logger.info("✅ [RevenueCat] Total packages loaded: \(packages.count)")
-
-                    guard !packages.isEmpty else {
-                        logger.info("⚠️ [RevenueCat] No packages found!")
-                        continuation.resume(throwing: StoreError.noProductsAvailable)
-                        return
-                    }
-
-                    continuation.resume(returning: packages)
                 }
             )
         }
-        #else
-        throw StoreError.unknown
         #endif
     }
 
     public func purchase(packageData: PurchasePackageData) async throws -> CustomerInfoData {
-        #if !SKIP && canImport(RevenueCat)
-        // First get the actual RevenueCat package
+        #if !SKIP
         let offerings = try await Purchases.shared.offerings()
-        var foundPackage: Package? = nil
-
-        // Search in current offering
-        if let current = offerings.current {
-            foundPackage = current.availablePackages.first {
-                $0.storeProduct.productIdentifier == packageData.productId
-            }
-        }
-
-        // Search in subscription offering
-        if foundPackage == nil, let subscription = offerings.offering(identifier: "Subscription") {
-            foundPackage = subscription.availablePackages.first {
-                $0.storeProduct.productIdentifier == packageData.productId
-            }
-        }
-
-        guard let package = foundPackage else {
+        guard let package = findPackage(in: offerings, productId: packageData.productId) else {
             throw StoreError.packageNotFound
         }
 
@@ -270,153 +204,111 @@ public class RevenueCatService {
             throw StoreError.userCancelled
         }
 
-        return convertCustomerInfo(customerInfo)
-        #elseif SKIP
+        return CustomerInfoData(info: customerInfo)
+        #else
         return try await withCheckedThrowingContinuation { continuation in
-            let purchases = Purchases.sharedInstance
             let activity = ProcessInfo.processInfo.androidActivity
 
-            // First get offerings to find the package
-            purchases.getOfferings(
+            Purchases.sharedInstance.getOfferings(
                 onError: { error in
                     continuation.resume(throwing: StoreError.packageNotFound)
                 },
                 onSuccess: { offerings in
-                    var foundPackage: Package? = nil
-
-                    // Search in current offering
-                    if let current = offerings.current {
-                        foundPackage = current.availablePackages.first {
-                            $0.product.id == packageData.productId
-                        }
-                    }
-
-                    // Search in subscription offering if not found
-                    if foundPackage == nil, let subscription = offerings.all["Subscription"] {
-                        foundPackage = subscription.availablePackages.first {
-                            $0.product.id == packageData.productId
-                        }
-                    }
-
-                    guard let pkg = foundPackage else {
+                    guard let pkg = self.findPackage(in: offerings, productId: packageData.productId) else {
                         continuation.resume(throwing: StoreError.packageNotFound)
                         return
                     }
 
-                    // Now purchase
                     let params = PurchaseParams.Builder(activity, pkg).build()
-                    purchases.purchase(
+                    Purchases.sharedInstance.purchase(
                         params,
                         onError: { error, userCancelled in
                             if userCancelled {
                                 continuation.resume(throwing: StoreError.userCancelled)
                             } else {
-                                logger.info("❌ [RevenueCat] Purchase error: \(error.message)")
                                 continuation.resume(throwing: StoreError.unknown)
                             }
                         },
                         onSuccess: { _, customerInfo in
-                            let data = self.convertCustomerInfo(customerInfo)
-                            continuation.resume(returning: data)
+                            continuation.resume(returning: CustomerInfoData(info: customerInfo))
                         }
                     )
                 }
             )
         }
-        #else
-        throw StoreError.unknown
         #endif
     }
 
     public func restorePurchases() async throws -> CustomerInfoData {
-        #if !SKIP && canImport(RevenueCat)
+        #if !SKIP
         let customerInfo = try await Purchases.shared.restorePurchases()
-        return convertCustomerInfo(customerInfo)
-        #elseif SKIP
+        return CustomerInfoData(info: customerInfo)
+        #else
         return try await withCheckedThrowingContinuation { continuation in
-            let purchases = Purchases.sharedInstance
-
-            purchases.restorePurchases(
+            Purchases.sharedInstance.restorePurchases(
                 onError: { error in
-                    logger.info("❌ [RevenueCat] Restore error: \(error.message)")
                     continuation.resume(throwing: StoreError.noPurchasesFound)
                 },
                 onSuccess: { customerInfo in
-                    let data = self.convertCustomerInfo(customerInfo)
-                    continuation.resume(returning: data)
+                    continuation.resume(returning: CustomerInfoData(info: customerInfo))
                 }
             )
         }
-        #else
-        throw StoreError.unknown
         #endif
     }
 
     public func getCustomerInfo() async throws -> CustomerInfoData {
-        #if !SKIP && canImport(RevenueCat)
+        #if !SKIP
         let customerInfo = try await Purchases.shared.customerInfo()
-        return convertCustomerInfo(customerInfo)
-        #elseif SKIP
+        return CustomerInfoData(info: customerInfo)
+        #else
         return try await withCheckedThrowingContinuation { continuation in
-            let purchases = Purchases.sharedInstance
-
-            purchases.getCustomerInfo(
+            Purchases.sharedInstance.getCustomerInfo(
                 onError: { error in
-                    logger.info("❌ [RevenueCat] Get customer info error: \(error.message)")
                     continuation.resume(throwing: StoreError.unknown)
                 },
                 onSuccess: { customerInfo in
-                    let data = self.convertCustomerInfo(customerInfo)
-                    continuation.resume(returning: data)
+                    continuation.resume(returning: CustomerInfoData(info: customerInfo))
                 }
             )
         }
-        #else
-        throw StoreError.unknown
         #endif
     }
 
-    // MARK: - Conversion Helpers
+    // MARK: - Helper Methods
 
-    #if !SKIP && canImport(RevenueCat)
-    private func convertPackage(_ package: Package) -> PurchasePackageData {
-        PurchasePackageData(
-            identifier: package.identifier,
-            productId: package.storeProduct.productIdentifier,
-            priceString: package.storeProduct.localizedPriceString,
-            price: Double(truncating: package.storeProduct.price as NSNumber)
-        )
+    private func extractPackages(from offerings: Offerings, offeringIdentifier: String?) throws -> [PurchasePackageData]? {
+        #if !SKIP
+        let offering = offeringIdentifier != nil ? offerings.offering(identifier: offeringIdentifier!) : offerings.current
+        #else
+        let offering = offeringIdentifier != nil ? offerings.all[offeringIdentifier!] : offerings.current
+        #endif
+
+        guard let packages = offering?.availablePackages, !packages.isEmpty else {
+            return nil
+        }
+        return packages.map { PurchasePackageData(package: $0) }
     }
-    #endif
 
-    #if !SKIP && canImport(RevenueCat)
-    private func convertCustomerInfo(_ info: CustomerInfo) -> CustomerInfoData {
-        let activeEntitlements = info.entitlements.all.values
-            .filter { $0.isActive }
-            .map { $0.identifier }
-
-        let purchasedProductIds = Array(info.allPurchasedProductIdentifiers)
-
-        return CustomerInfoData(
-            userId: info.originalAppUserId,
-            activeEntitlements: activeEntitlements,
-            allPurchasedProductIds: purchasedProductIds
-        )
+    private func findPackage(in offerings: Offerings, productId: String) -> Package? {
+        #if !SKIP
+        // Search all offerings
+        for offering in offerings.all.values {
+            if let found = offering.availablePackages.first(where: { $0.storeProduct.productIdentifier == productId }) {
+                return found
+            }
+        }
+        return nil
+        #else
+        // Search all offerings
+        for offering in offerings.all.values {
+            if let found = offering.availablePackages.first(where: { $0.product.id == productId }) {
+                return found
+            }
+        }
+        return nil
+        #endif
     }
-    #endif
-
-    #if SKIP
-    private func convertCustomerInfo(_ info: CustomerInfo) -> CustomerInfoData {
-        let activeEntitlements = Array(info.entitlements.active.keys)
-        let purchasedProductIds = Array(info.allPurchasedProductIdentifiers)
-
-        return CustomerInfoData(
-            userId: info.originalAppUserId,
-            activeEntitlements: activeEntitlements,
-            allPurchasedProductIds: purchasedProductIds
-        )
-    }
-    #endif
 }
 
 // MARK: - Errors
@@ -440,3 +332,5 @@ extension StoreError: LocalizedError {
         }
     }
 }
+
+#endif // !SKIP_BRIDGE
