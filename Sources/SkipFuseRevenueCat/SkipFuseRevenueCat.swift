@@ -10,6 +10,7 @@ import com.revenuecat.purchases.Package
 import com.revenuecat.purchases.PurchaseParams
 import com.revenuecat.purchases.CustomerInfo
 import com.revenuecat.purchases.Offerings
+import com.revenuecat.purchases.Offering
 import com.revenuecat.purchases.PurchasesTransactionException
 import com.revenuecat.purchases.awaitCustomerInfo
 import com.revenuecat.purchases.awaitOfferings
@@ -19,81 +20,249 @@ import com.revenuecat.purchases.awaitPurchase
 import com.revenuecat.purchases.awaitRestore
 #endif
 
-// MARK: - Platform-Agnostic Data Models
+// MARK: - Wrapper Classes
 
-public struct PurchasePackageData: Sendable {
-    public let identifier: String
-    public let productId: String
-    public let priceString: String
-    public let price: Double
+/// Wrapper for RevenueCat Offerings
+#if !SKIP
+public final class RCFuseOfferings {
+    public let offerings: RevenueCat.Offerings
 
-    public init(identifier: String, productId: String, priceString: String, price: Double) {
-        self.identifier = identifier
-        self.productId = productId
-        self.priceString = priceString
-        self.price = price
+    public init(offerings: RevenueCat.Offerings) {
+        self.offerings = offerings
     }
 
-    #if !SKIP
-    init(package: Package) {
-        self.identifier = package.identifier
-        self.productId = package.storeProduct.productIdentifier
-        self.priceString = package.storeProduct.localizedPriceString
-        self.price = Double(truncating: package.storeProduct.price as NSNumber)
+    public var current: RCFuseOffering? {
+        guard let current = offerings.current else { return nil }
+        return RCFuseOffering(offering: current)
     }
-    #else
-    init(package: Package) {
-        self.identifier = package.identifier
-        self.productId = package.product.id
-        self.priceString = package.product.price.formatted
-        self.price = Double(package.product.price.amountMicros) / 1_000_000.0
+
+    public var all: [String: RCFuseOffering] {
+        return Dictionary(uniqueKeysWithValues: offerings.all.map { (key, value) in
+            (key, RCFuseOffering(offering: value))
+        })
     }
-    #endif
+
+    public func offering(identifier: String) -> RCFuseOffering? {
+        guard let offering = offerings.offering(identifier: identifier) else {
+            return nil
+        }
+        return RCFuseOffering(offering: offering)
+    }
 }
+#else
+public final class RCFuseOfferings: KotlinConverting<com.revenuecat.purchases.Offerings> {
+    public let offerings: com.revenuecat.purchases.Offerings
 
-public struct CustomerInfoData: Sendable {
-    public let userId: String
-    public let activeEntitlements: [String]
-    public let allPurchasedProductIds: [String]
-
-    public init(userId: String, activeEntitlements: [String], allPurchasedProductIds: [String]) {
-        self.userId = userId
-        self.activeEntitlements = activeEntitlements
-        self.allPurchasedProductIds = allPurchasedProductIds
+    public init(offerings: com.revenuecat.purchases.Offerings) {
+        self.offerings = offerings
     }
 
-    #if !SKIP
-    init(info: CustomerInfo) {
-        self.userId = info.originalAppUserId
-        self.activeEntitlements = info.entitlements.all.values
+    public override func kotlin(nocopy: Bool = false) -> com.revenuecat.purchases.Offerings {
+        offerings
+    }
+
+    public var current: RCFuseOffering? {
+        guard let current = offerings.current else { return nil }
+        return RCFuseOffering(offering: current)
+    }
+
+    public var all: [String: RCFuseOffering] {
+        var result: [String: RCFuseOffering] = [:]
+        for (key, value) in offerings.all {
+            result[key] = RCFuseOffering(offering: value)
+        }
+        return result
+    }
+
+    public func offering(identifier: String) -> RCFuseOffering? {
+        guard let offering = offerings.all[identifier] else {
+            return nil
+        }
+        return RCFuseOffering(offering: offering)
+    }
+}
+#endif
+
+/// Wrapper for RevenueCat Offering
+#if !SKIP
+public final class RCFuseOffering {
+    public let offering: RevenueCat.Offering
+
+    public init(offering: RevenueCat.Offering) {
+        self.offering = offering
+    }
+
+    public var identifier: String {
+        return offering.identifier
+    }
+
+    public var availablePackages: [RCFusePackage] {
+        return offering.availablePackages.map { RCFusePackage(package: $0) }
+    }
+}
+#else
+public final class RCFuseOffering: KotlinConverting<com.revenuecat.purchases.Offering> {
+    public let offering: com.revenuecat.purchases.Offering
+
+    public init(offering: com.revenuecat.purchases.Offering) {
+        self.offering = offering
+    }
+
+    public override func kotlin(nocopy: Bool = false) -> com.revenuecat.purchases.Offering {
+        offering
+    }
+
+    public var identifier: String {
+        return offering.identifier
+    }
+
+    public var availablePackages: [RCFusePackage] {
+        return Array(offering.availablePackages.map { RCFusePackage(package: $0) })
+    }
+}
+#endif
+
+/// Wrapper for RevenueCat Package
+#if !SKIP
+public final class RCFusePackage {
+    public let package: RevenueCat.Package
+
+    public init(package: RevenueCat.Package) {
+        self.package = package
+    }
+
+    public var identifier: String {
+        return package.identifier
+    }
+
+    public var storeProduct: RCFuseStoreProduct {
+        return RCFuseStoreProduct(product: package.storeProduct)
+    }
+}
+#else
+public final class RCFusePackage: KotlinConverting<com.revenuecat.purchases.Package> {
+    public let package: com.revenuecat.purchases.Package
+
+    public init(package: com.revenuecat.purchases.Package) {
+        self.package = package
+    }
+
+    public override func kotlin(nocopy: Bool = false) -> com.revenuecat.purchases.Package {
+        package
+    }
+
+    public var identifier: String {
+        return package.identifier
+    }
+
+    public var storeProduct: RCFuseStoreProduct {
+        return RCFuseStoreProduct(product: package.product)
+    }
+}
+#endif
+
+/// Wrapper for RevenueCat StoreProduct
+#if !SKIP
+public final class RCFuseStoreProduct {
+    public let product: RevenueCat.StoreProduct
+
+    public init(product: RevenueCat.StoreProduct) {
+        self.product = product
+    }
+
+    public var productIdentifier: String {
+        return product.productIdentifier
+    }
+
+    public var localizedPriceString: String {
+        return product.localizedPriceString
+    }
+
+    public var price: Double {
+        return Double(truncating: product.price as NSNumber)
+    }
+}
+#else
+public final class RCFuseStoreProduct: KotlinConverting<com.revenuecat.purchases.models.StoreProduct> {
+    public let product: com.revenuecat.purchases.models.StoreProduct
+
+    public init(product: com.revenuecat.purchases.models.StoreProduct) {
+        self.product = product
+    }
+
+    public override func kotlin(nocopy: Bool = false) -> com.revenuecat.purchases.models.StoreProduct {
+        product
+    }
+
+    public var productIdentifier: String {
+        return product.id
+    }
+
+    public var localizedPriceString: String {
+        return product.price.formatted
+    }
+
+    public var price: Double {
+        return Double(product.price.amountMicros) / 1_000_000.0
+    }
+}
+#endif
+
+/// Wrapper for RevenueCat CustomerInfo
+#if !SKIP
+public final class RCFuseCustomerInfo {
+    public let customerInfo: RevenueCat.CustomerInfo
+
+    public init(customerInfo: RevenueCat.CustomerInfo) {
+        self.customerInfo = customerInfo
+    }
+
+    public var originalAppUserId: String {
+        return customerInfo.originalAppUserId
+    }
+
+    public var activeEntitlements: Set<String> {
+        return Set(customerInfo.entitlements.all.values
             .filter { $0.isActive }
-            .map { $0.identifier }
-        self.allPurchasedProductIds = Array(info.allPurchasedProductIdentifiers)
+            .map { $0.identifier })
     }
-    #else
-    init(info: CustomerInfo) {
-        self.userId = info.originalAppUserId
-        self.activeEntitlements = Array(info.entitlements.active.keys)
-        self.allPurchasedProductIds = Array(info.allPurchasedProductIds)
-    }
-    #endif
-}
 
-public struct OfferingsData: Sendable {
-    public let currentOffering: String?
-    public let allOfferings: [String]
-
-    public init(currentOffering: String?, allOfferings: [String]) {
-        self.currentOffering = currentOffering
-        self.allOfferings = allOfferings
+    public var allPurchasedProductIdentifiers: Set<String> {
+        return customerInfo.allPurchasedProductIdentifiers
     }
 }
+#else
+public final class RCFuseCustomerInfo: KotlinConverting<com.revenuecat.purchases.CustomerInfo> {
+    public let customerInfo: com.revenuecat.purchases.CustomerInfo
+
+    public init(customerInfo: com.revenuecat.purchases.CustomerInfo) {
+        self.customerInfo = customerInfo
+    }
+
+    public override func kotlin(nocopy: Bool = false) -> com.revenuecat.purchases.CustomerInfo {
+        customerInfo
+    }
+
+    public var originalAppUserId: String {
+        return customerInfo.originalAppUserId
+    }
+
+    public var activeEntitlements: Set<String> {
+        return Set(customerInfo.entitlements.active.keys)
+    }
+
+    public var allPurchasedProductIdentifiers: Set<String> {
+        return Set(customerInfo.allPurchasedProductIds)
+    }
+}
+#endif
 
 // MARK: - RevenueCat Service
 
 /// RevenueCat service for purchases and subscriptions
-public struct RevenueCat: Sendable {
-    public static let shared = RevenueCat()
+/// Returns wrapper objects for cross-platform compatibility
+public struct RevenueCatFuse: @unchecked Sendable {
+    public static let shared = RevenueCatFuse()
 
     private init() {}
 
@@ -126,67 +295,71 @@ public struct RevenueCat: Sendable {
         #endif
     }
 
-    public func loadOfferings() async throws -> OfferingsData {
+    /// Load all offerings from RevenueCat
+    /// Returns wrapped Offerings object with full data
+    public func loadOfferings() async throws -> RCFuseOfferings {
         #if !SKIP
         let offerings = try await Purchases.shared.offerings()
-        return OfferingsData(
-            currentOffering: offerings.current?.identifier,
-            allOfferings: Array(offerings.all.keys)
-        )
+        return RCFuseOfferings(offerings: offerings)
         #else
         let offerings = Purchases.sharedInstance.awaitOfferings()
-        return OfferingsData(
-            currentOffering: offerings.current?.identifier,
-            allOfferings: Array(offerings.all.keys)
-        )
+        return RCFuseOfferings(offerings: offerings)
         #endif
     }
 
-    public func loadProducts(offeringIdentifier: String? = nil) async throws -> [PurchasePackageData] {
+    /// Load packages from a specific offering
+    /// Returns wrapped Package objects with full data
+    public func loadProducts(offeringIdentifier: String? = nil) async throws -> [RCFusePackage] {
         #if !SKIP
         let offerings = try await Purchases.shared.offerings()
-        guard let packages = try extractPackages(from: offerings, offeringIdentifier: offeringIdentifier) else {
+        let offering = offeringIdentifier != nil ? offerings.offering(identifier: offeringIdentifier!) : offerings.current
+
+        guard let packages = offering?.availablePackages else {
             throw StoreError.noProductsAvailable
         }
-        return packages
+
+        guard packages.count > 0 else {
+            throw StoreError.noProductsAvailable
+        }
+
+        return packages.map { RCFusePackage(package: $0) }
         #else
         let offerings = Purchases.sharedInstance.awaitOfferings()
-        guard let packages = try extractPackages(from: offerings, offeringIdentifier: offeringIdentifier) else {
+        let offering = offeringIdentifier != nil ? offerings.all[offeringIdentifier!] : offerings.current
+
+        guard let packages = offering?.availablePackages else {
             throw StoreError.noProductsAvailable
         }
-        return packages
+
+        guard packages.size > 0 else {
+            throw StoreError.noProductsAvailable
+        }
+
+        return Array(packages.map { RCFusePackage(package: $0) })
         #endif
     }
 
-    public func purchase(packageData: PurchasePackageData) async throws -> CustomerInfoData {
+    /// Purchase a package
+    /// Returns wrapped CustomerInfo object
+    public func purchase(package: RCFusePackage) async throws -> RCFuseCustomerInfo {
         #if !SKIP
-        let offerings = try await Purchases.shared.offerings()
-        guard let package = findPackage(in: offerings, productId: packageData.productId) else {
-            throw StoreError.packageNotFound
-        }
-
-        let (_, customerInfo, userCancelled) = try await Purchases.shared.purchase(package: package)
+        let (_, customerInfo, userCancelled) = try await Purchases.shared.purchase(package: package.package)
 
         if userCancelled {
             throw StoreError.userCancelled
         }
 
-        return CustomerInfoData(info: customerInfo)
+        return RCFuseCustomerInfo(customerInfo: customerInfo)
         #else
-        let offerings = Purchases.sharedInstance.awaitOfferings()
-        guard let pkg = findPackage(in: offerings, productId: packageData.productId) else {
-            throw StoreError.packageNotFound
-        }
-
         let context = ProcessInfo.processInfo.androidContext
         guard let activity = context as? android.app.Activity else {
             throw StoreError.unknown
         }
-        let params = PurchaseParams.Builder(activity, pkg).build()
+        let params = PurchaseParams.Builder(activity, package.package).build()
 
         do {
             let result = Purchases.sharedInstance.awaitPurchase(params)
-            return CustomerInfoData(info: result.customerInfo)
+            return RCFuseCustomerInfo(customerInfo: result.customerInfo)
         } catch let error as PurchasesTransactionException {
             if error.userCancelled {
                 throw StoreError.userCancelled
@@ -196,69 +369,27 @@ public struct RevenueCat: Sendable {
         #endif
     }
 
-    public func restorePurchases() async throws -> CustomerInfoData {
+    /// Restore purchases
+    /// Returns wrapped CustomerInfo object
+    public func restorePurchases() async throws -> RCFuseCustomerInfo {
         #if !SKIP
         let customerInfo = try await Purchases.shared.restorePurchases()
-        return CustomerInfoData(info: customerInfo)
+        return RCFuseCustomerInfo(customerInfo: customerInfo)
         #else
         let customerInfo = Purchases.sharedInstance.awaitRestore()
-        return CustomerInfoData(info: customerInfo)
+        return RCFuseCustomerInfo(customerInfo: customerInfo)
         #endif
     }
 
-    public func getCustomerInfo() async throws -> CustomerInfoData {
+    /// Get current customer info
+    /// Returns wrapped CustomerInfo object
+    public func getCustomerInfo() async throws -> RCFuseCustomerInfo {
         #if !SKIP
         let customerInfo = try await Purchases.shared.customerInfo()
-        return CustomerInfoData(info: customerInfo)
+        return RCFuseCustomerInfo(customerInfo: customerInfo)
         #else
         let customerInfo = Purchases.sharedInstance.awaitCustomerInfo()
-        return CustomerInfoData(info: customerInfo)
-        #endif
-    }
-
-    // MARK: - Helper Methods
-
-    private func extractPackages(from offerings: Offerings, offeringIdentifier: String?) throws -> [PurchasePackageData]? {
-        #if !SKIP
-        let offering = offeringIdentifier != nil ? offerings.offering(identifier: offeringIdentifier!) : offerings.current
-        #else
-        let offering = offeringIdentifier != nil ? offerings.all[offeringIdentifier!] : offerings.current
-        #endif
-
-        guard let packages = offering?.availablePackages else {
-            return nil
-        }
-        #if !SKIP
-        guard packages.count > 0 else {
-            return nil
-        }
-        #else
-        guard packages.size > 0 else {
-            return nil
-        }
-        #endif
-        return Array(packages.map { PurchasePackageData(package: $0) })
-    }
-
-    private func findPackage(in offerings: Offerings, productId: String) -> Package? {
-        #if !SKIP
-        // Search all offerings
-        for offering in offerings.all.values {
-            if let found = offering.availablePackages.first(where: { $0.storeProduct.productIdentifier == productId }) {
-                return found
-            }
-        }
-        return nil
-        #else
-        // Search all offerings
-        for offering in Array(offerings.all.values) {
-            for pkg in offering.availablePackages {
-                if pkg.product.id == productId {
-                    return pkg
-                }
-            }
-        }
-        return nil
+        return RCFuseCustomerInfo(customerInfo: customerInfo)
         #endif
     }
 }
