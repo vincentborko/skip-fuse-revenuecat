@@ -24,7 +24,7 @@ import com.revenuecat.purchases.awaitRestore
 
 /// Wrapper for RevenueCat Offerings
 #if !SKIP
-public final class RCFuseOfferings {
+public final class RCFuseOfferings: @unchecked Sendable {
     public let offerings: RevenueCat.Offerings
 
     public init(offerings: RevenueCat.Offerings) {
@@ -50,13 +50,14 @@ public final class RCFuseOfferings {
     }
 }
 #else
-public final class RCFuseOfferings: KotlinConverting<com.revenuecat.purchases.Offerings> {
+public final class RCFuseOfferings: KotlinConverting<com.revenuecat.purchases.Offerings>, @unchecked Sendable {
     public let offerings: com.revenuecat.purchases.Offerings
 
     public init(offerings: com.revenuecat.purchases.Offerings) {
         self.offerings = offerings
     }
 
+    // SKIP @nooverride
     public override func kotlin(nocopy: Bool = false) -> com.revenuecat.purchases.Offerings {
         offerings
     }
@@ -85,7 +86,7 @@ public final class RCFuseOfferings: KotlinConverting<com.revenuecat.purchases.Of
 
 /// Wrapper for RevenueCat Offering
 #if !SKIP
-public final class RCFuseOffering {
+public final class RCFuseOffering: @unchecked Sendable {
     public let offering: RevenueCat.Offering
 
     public init(offering: RevenueCat.Offering) {
@@ -101,13 +102,14 @@ public final class RCFuseOffering {
     }
 }
 #else
-public final class RCFuseOffering: KotlinConverting<com.revenuecat.purchases.Offering> {
+public final class RCFuseOffering: KotlinConverting<com.revenuecat.purchases.Offering>, @unchecked Sendable {
     public let offering: com.revenuecat.purchases.Offering
 
     public init(offering: com.revenuecat.purchases.Offering) {
         self.offering = offering
     }
 
+    // SKIP @nooverride
     public override func kotlin(nocopy: Bool = false) -> com.revenuecat.purchases.Offering {
         offering
     }
@@ -124,7 +126,7 @@ public final class RCFuseOffering: KotlinConverting<com.revenuecat.purchases.Off
 
 /// Wrapper for RevenueCat Package
 #if !SKIP
-public final class RCFusePackage {
+public final class RCFusePackage: @unchecked Sendable {
     public let package: RevenueCat.Package
 
     public init(package: RevenueCat.Package) {
@@ -140,13 +142,14 @@ public final class RCFusePackage {
     }
 }
 #else
-public final class RCFusePackage: KotlinConverting<com.revenuecat.purchases.Package> {
+public final class RCFusePackage: KotlinConverting<com.revenuecat.purchases.Package>, @unchecked Sendable {
     public let package: com.revenuecat.purchases.Package
 
     public init(package: com.revenuecat.purchases.Package) {
         self.package = package
     }
 
+    // SKIP @nooverride
     public override func kotlin(nocopy: Bool = false) -> com.revenuecat.purchases.Package {
         package
     }
@@ -163,7 +166,7 @@ public final class RCFusePackage: KotlinConverting<com.revenuecat.purchases.Pack
 
 /// Wrapper for RevenueCat StoreProduct
 #if !SKIP
-public final class RCFuseStoreProduct {
+public final class RCFuseStoreProduct: @unchecked Sendable {
     public let product: RevenueCat.StoreProduct
 
     public init(product: RevenueCat.StoreProduct) {
@@ -183,13 +186,14 @@ public final class RCFuseStoreProduct {
     }
 }
 #else
-public final class RCFuseStoreProduct: KotlinConverting<com.revenuecat.purchases.models.StoreProduct> {
+public final class RCFuseStoreProduct: KotlinConverting<com.revenuecat.purchases.models.StoreProduct>, @unchecked Sendable {
     public let product: com.revenuecat.purchases.models.StoreProduct
 
     public init(product: com.revenuecat.purchases.models.StoreProduct) {
         self.product = product
     }
 
+    // SKIP @nooverride
     public override func kotlin(nocopy: Bool = false) -> com.revenuecat.purchases.models.StoreProduct {
         product
     }
@@ -210,7 +214,7 @@ public final class RCFuseStoreProduct: KotlinConverting<com.revenuecat.purchases
 
 /// Wrapper for RevenueCat CustomerInfo
 #if !SKIP
-public final class RCFuseCustomerInfo {
+public final class RCFuseCustomerInfo: @unchecked Sendable {
     public let customerInfo: RevenueCat.CustomerInfo
 
     public init(customerInfo: RevenueCat.CustomerInfo) {
@@ -232,13 +236,14 @@ public final class RCFuseCustomerInfo {
     }
 }
 #else
-public final class RCFuseCustomerInfo: KotlinConverting<com.revenuecat.purchases.CustomerInfo> {
+public final class RCFuseCustomerInfo: KotlinConverting<com.revenuecat.purchases.CustomerInfo>, @unchecked Sendable {
     public let customerInfo: com.revenuecat.purchases.CustomerInfo
 
     public init(customerInfo: com.revenuecat.purchases.CustomerInfo) {
         self.customerInfo = customerInfo
     }
 
+    // SKIP @nooverride
     public override func kotlin(nocopy: Bool = false) -> com.revenuecat.purchases.CustomerInfo {
         customerInfo
     }
@@ -355,7 +360,9 @@ public struct RevenueCatFuse: @unchecked Sendable {
         guard let activity = context as? android.app.Activity else {
             throw StoreError.unknown
         }
-        let params = PurchaseParams.Builder(activity, package.package).build()
+        // Convert to Kotlin type explicitly to avoid data race
+        let kotlinPackage = package.kotlin()
+        let params = PurchaseParams.Builder(activity, kotlinPackage).build()
 
         do {
             let result = Purchases.sharedInstance.awaitPurchase(params)
