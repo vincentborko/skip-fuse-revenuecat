@@ -66,8 +66,8 @@ public struct CustomerInfoData: Sendable {
     #else
     init(info: CustomerInfo) {
         self.userId = info.originalAppUserId
-        self.activeEntitlements = info.entitlements.active.keys.toList()
-        self.allPurchasedProductIds = info.allPurchasedProductIds.toList()
+        self.activeEntitlements = Array(info.entitlements.active.keys)
+        self.allPurchasedProductIds = Array(info.allPurchasedProductIds)
     }
     #endif
 }
@@ -141,7 +141,7 @@ public struct RevenueCat: Sendable {
             Purchases.sharedInstance.getOfferingsWith { offerings in
                 let data = OfferingsData(
                     currentOffering: offerings.current?.identifier,
-                    allOfferings: offerings.all.keys.toList()
+                    allOfferings: Array(offerings.all.keys)
                 )
                 continuation.resume(returning: data)
             }
@@ -189,7 +189,10 @@ public struct RevenueCat: Sendable {
         return CustomerInfoData(info: customerInfo)
         #else
         return try await withCheckedThrowingContinuation { continuation in
-            let activity = ProcessInfo.processInfo.androidContext
+            guard let activity = UIApplication.shared.androidActivity else {
+                continuation.resume(throwing: StoreError.unknown)
+                return
+            }
 
             Purchases.sharedInstance.getOfferingsWith { offerings in
                 guard let pkg = self.findPackage(in: offerings, productId: packageData.productId) else {
@@ -278,7 +281,7 @@ public struct RevenueCat: Sendable {
         return nil
         #else
         // Search all offerings
-        for offering in offerings.all.values.toList() {
+        for offering in Array(offerings.all.values) {
             if let found = offering.availablePackages.first(where: { $0.product.id == productId }) {
                 return found
             }
