@@ -10,6 +10,13 @@ import com.revenuecat.purchases.Package
 import com.revenuecat.purchases.PurchaseParams
 import com.revenuecat.purchases.CustomerInfo
 import com.revenuecat.purchases.Offerings
+import com.revenuecat.purchases.PurchasesTransactionException
+import com.revenuecat.purchases.awaitCustomerInfo
+import com.revenuecat.purchases.awaitOfferings
+import com.revenuecat.purchases.awaitLogIn
+import com.revenuecat.purchases.awaitLogOut
+import com.revenuecat.purchases.awaitPurchase
+import com.revenuecat.purchases.awaitRestore
 #endif
 
 // MARK: - Platform-Agnostic Data Models
@@ -95,11 +102,11 @@ public struct RevenueCat: Sendable {
         Purchases.logLevel = .debug
         Purchases.configure(withAPIKey: apiKey)
         #else
+        Purchases.debugLogsEnabled = true
         let context = ProcessInfo.processInfo.androidContext
         let builder = PurchasesConfiguration.Builder(context, apiKey)
         let config = builder.build()
         Purchases.configure(config)
-        Purchases.sharedInstance.logLevel = LogLevel.DEBUG
         #endif
     }
 
@@ -107,17 +114,7 @@ public struct RevenueCat: Sendable {
         #if !SKIP
         let _ = try await Purchases.shared.logIn(userId)
         #else
-        return try await withCheckedThrowingContinuation { continuation in
-            Purchases.sharedInstance.logInWith(
-                userId,
-                onError: { error in
-                    continuation.resume(throwing: StoreError.unknown)
-                },
-                onSuccess: { _, _ in
-                    continuation.resume(returning: ())
-                }
-            )
-        }
+        let _ = Purchases.sharedInstance.awaitLogIn(userId)
         #endif
     }
 
@@ -125,7 +122,7 @@ public struct RevenueCat: Sendable {
         #if !SKIP
         let _ = try await Purchases.shared.logOut()
         #else
-        Purchases.sharedInstance.logOut()
+        let _ = Purchases.sharedInstance.awaitLogOut()
         #endif
     }
 
@@ -137,15 +134,11 @@ public struct RevenueCat: Sendable {
             allOfferings: Array(offerings.all.keys)
         )
         #else
-        return try await withCheckedThrowingContinuation { continuation in
-            Purchases.sharedInstance.getOfferingsWith { offerings in
-                let data = OfferingsData(
-                    currentOffering: offerings.current?.identifier,
-                    allOfferings: Array(offerings.all.keys)
-                )
-                continuation.resume(returning: data)
-            }
-        }
+        let offerings = Purchases.sharedInstance.awaitOfferings()
+        return OfferingsData(
+            currentOffering: offerings.current?.identifier,
+            allOfferings: Array(offerings.all.keys)
+        )
         #endif
     }
 
@@ -157,19 +150,11 @@ public struct RevenueCat: Sendable {
         }
         return packages
         #else
-        return try await withCheckedThrowingContinuation { continuation in
-            Purchases.sharedInstance.getOfferingsWith { offerings in
-                do {
-                    guard let packages = try self.extractPackages(from: offerings, offeringIdentifier: offeringIdentifier) else {
-                        continuation.resume(throwing: StoreError.noProductsAvailable)
-                        return
-                    }
-                    continuation.resume(returning: packages)
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
+        let offerings = Purchases.sharedInstance.awaitOfferings()
+        guard let packages = try extractPackages(from: offerings, offeringIdentifier: offeringIdentifier) else {
+            throw StoreError.noProductsAvailable
         }
+        return packages
         #endif
     }
 
@@ -188,33 +173,25 @@ public struct RevenueCat: Sendable {
 
         return CustomerInfoData(info: customerInfo)
         #else
-        return try await withCheckedThrowingContinuation { continuation in
-            guard let activity = UIApplication.shared.androidActivity else {
-                continuation.resume(throwing: StoreError.unknown)
-                return
-            }
+        let offerings = Purchases.sharedInstance.awaitOfferings()
+        guard let pkg = findPackage(in: offerings, productId: packageData.productId) else {
+            throw StoreError.packageNotFound
+        }
 
-            Purchases.sharedInstance.getOfferingsWith { offerings in
-                guard let pkg = self.findPackage(in: offerings, productId: packageData.productId) else {
-                    continuation.resume(throwing: StoreError.packageNotFound)
-                    return
-                }
+        let context = ProcessInfo.processInfo.androidContext
+        guard let activity = context as? android.app.Activity else {
+            throw StoreError.unknown
+        }
+        let params = PurchaseParams.Builder(activity, pkg).build()
 
-                let params = PurchaseParams.Builder(activity, pkg).build()
-                Purchases.sharedInstance.purchaseWith(
-                    params,
-                    onError: { error, userCancelled in
-                        if userCancelled {
-                            continuation.resume(throwing: StoreError.userCancelled)
-                        } else {
-                            continuation.resume(throwing: StoreError.unknown)
-                        }
-                    },
-                    onSuccess: { _, customerInfo in
-                        continuation.resume(returning: CustomerInfoData(info: customerInfo))
-                    }
-                )
+        do {
+            let result = Purchases.sharedInstance.awaitPurchase(params)
+            return CustomerInfoData(info: result.customerInfo)
+        } catch let error as PurchasesTransactionException {
+            if error.userCancelled {
+                throw StoreError.userCancelled
             }
+            throw error
         }
         #endif
     }
@@ -224,16 +201,8 @@ public struct RevenueCat: Sendable {
         let customerInfo = try await Purchases.shared.restorePurchases()
         return CustomerInfoData(info: customerInfo)
         #else
-        return try await withCheckedThrowingContinuation { continuation in
-            Purchases.sharedInstance.restorePurchasesWith(
-                onError: { error in
-                    continuation.resume(throwing: StoreError.noPurchasesFound)
-                },
-                onSuccess: { customerInfo in
-                    continuation.resume(returning: CustomerInfoData(info: customerInfo))
-                }
-            )
-        }
+        let customerInfo = Purchases.sharedInstance.awaitRestore()
+        return CustomerInfoData(info: customerInfo)
         #endif
     }
 
@@ -242,16 +211,8 @@ public struct RevenueCat: Sendable {
         let customerInfo = try await Purchases.shared.customerInfo()
         return CustomerInfoData(info: customerInfo)
         #else
-        return try await withCheckedThrowingContinuation { continuation in
-            Purchases.sharedInstance.getCustomerInfoWith(
-                onError: { error in
-                    continuation.resume(throwing: StoreError.unknown)
-                },
-                onSuccess: { customerInfo in
-                    continuation.resume(returning: CustomerInfoData(info: customerInfo))
-                }
-            )
-        }
+        let customerInfo = Purchases.sharedInstance.awaitCustomerInfo()
+        return CustomerInfoData(info: customerInfo)
         #endif
     }
 
@@ -264,10 +225,19 @@ public struct RevenueCat: Sendable {
         let offering = offeringIdentifier != nil ? offerings.all[offeringIdentifier!] : offerings.current
         #endif
 
-        guard let packages = offering?.availablePackages, !packages.isEmpty else {
+        guard let packages = offering?.availablePackages else {
             return nil
         }
-        return packages.map { PurchasePackageData(package: $0) }
+        #if !SKIP
+        guard packages.count > 0 else {
+            return nil
+        }
+        #else
+        guard packages.size > 0 else {
+            return nil
+        }
+        #endif
+        return Array(packages.map { PurchasePackageData(package: $0) })
     }
 
     private func findPackage(in offerings: Offerings, productId: String) -> Package? {
@@ -282,8 +252,10 @@ public struct RevenueCat: Sendable {
         #else
         // Search all offerings
         for offering in Array(offerings.all.values) {
-            if let found = offering.availablePackages.first(where: { $0.product.id == productId }) {
-                return found
+            for pkg in offering.availablePackages {
+                if pkg.product.id == productId {
+                    return pkg
+                }
             }
         }
         return nil
