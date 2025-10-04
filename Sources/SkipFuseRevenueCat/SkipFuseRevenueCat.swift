@@ -344,10 +344,9 @@ public struct RevenueCatFuse: @unchecked Sendable {
         #endif
     }
 
-    /// Purchase a package
-    /// Returns wrapped CustomerInfo object
+    #if !SKIP
+    /// Purchase a package (iOS)
     public func purchase(package: RCFusePackage) async throws -> RCFuseCustomerInfo {
-        #if !SKIP
         let (_, customerInfo, userCancelled) = try await Purchases.shared.purchase(package: package.package)
 
         if userCancelled {
@@ -355,14 +354,17 @@ public struct RevenueCatFuse: @unchecked Sendable {
         }
 
         return RCFuseCustomerInfo(customerInfo: customerInfo)
-        #else
-        let context = ProcessInfo.processInfo.androidContext
-        guard let activity = context as? android.app.Activity else {
+    }
+    #else
+    /// Purchase a package (Android) - requires Activity
+    public func purchase(package: RCFusePackage, activity: Any) async throws -> RCFuseCustomerInfo {
+        guard let androidActivity = activity as? android.app.Activity else {
             throw StoreError.unknown
         }
-        // Convert to Kotlin type explicitly to avoid data race
+
+        // Convert to Kotlin type
         let kotlinPackage = package.kotlin()
-        let params = PurchaseParams.Builder(activity, kotlinPackage).build()
+        let params = PurchaseParams.Builder(androidActivity, kotlinPackage).build()
 
         do {
             let result = Purchases.sharedInstance.awaitPurchase(params)
@@ -373,8 +375,8 @@ public struct RevenueCatFuse: @unchecked Sendable {
             }
             throw error
         }
-        #endif
     }
+    #endif
 
     /// Restore purchases
     /// Returns wrapped CustomerInfo object
