@@ -56,22 +56,9 @@ public struct RCFusePaywallView: View {
     @Composable override func ComposeContent(context: ComposeContext) {
         var builder = PaywallDialogOptions.Builder()
 
-        // Set offering if identifier provided
+        // Set offering identifier if provided
         if let offeringId = offeringIdentifier {
-            builder = builder.setOffering(offeringId)
-        }
-
-        // Set listeners for purchase/restore callbacks
-        if onPurchaseCompleted != nil || onRestoreCompleted != nil {
-            builder = builder.setListener(object: PaywallListener {
-                override func onPurchaseCompleted(customerInfo: CustomerInfo, storeTransaction: StoreTransaction) {
-                    onPurchaseCompleted?(customerInfo.originalAppUserId)
-                }
-
-                override func onRestoreCompleted(customerInfo: CustomerInfo) {
-                    onRestoreCompleted?(customerInfo.originalAppUserId)
-                }
-            })
+            builder = builder.setRequiredEntitlementIdentifier(offeringId)
         }
 
         let options = builder.build()
