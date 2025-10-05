@@ -1,0 +1,13 @@
+# Configuration file for https://skip.tools project
+#
+# Kotlin dependencies and Gradle build options for this module can be configured here
+
+# RevenueCat Android UI SDK dependency
+skip:
+  bridging: true
+
+build:
+  contents:
+    - block: 'dependencies'
+      contents:
+        - 'implementation("com.revenuecat.purchases:purchases-ui:9.8.0")'

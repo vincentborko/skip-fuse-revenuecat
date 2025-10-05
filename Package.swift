@@ -8,10 +8,12 @@ let package = Package(
     platforms: [.iOS(.v17), .macOS(.v14)],
     products: [
         .library(name: "SkipFuseRevenueCat", targets: ["SkipFuseRevenueCat"]),
+        .library(name: "SkipFuseRevenueCatUI", targets: ["SkipFuseRevenueCatUI"]),
     ],
     dependencies: [
         .package(url: "https://source.skip.tools/skip.git", from: "1.6.27"),
         .package(url: "https://source.skip.tools/skip-foundation.git", from: "1.0.0"),
+        .package(url: "https://source.skip.tools/skip-ui.git", from: "1.0.0"),
         .package(url: "https://github.com/RevenueCat/purchases-ios.git", from: "4.43.0")
     ],
     targets: [
@@ -19,6 +21,11 @@ let package = Package(
             .product(name: "SkipFoundation", package: "skip-foundation"),
             .product(name: "RevenueCat", package: "purchases-ios", condition: .when(platforms: [.iOS, .macOS]))
         ], resources: [.process("Resources")], plugins: [.plugin(name: "skipstone", package: "skip")]),
+        .target(name: "SkipFuseRevenueCatUI", dependencies: [
+            "SkipFuseRevenueCat",
+            .product(name: "SkipUI", package: "skip-ui"),
+            .product(name: "RevenueCatUI", package: "purchases-ios", condition: .when(platforms: [.iOS, .macOS]))
+        ], plugins: [.plugin(name: "skipstone", package: "skip")]),
         .testTarget(name: "SkipFuseRevenueCatTests", dependencies: [
             "SkipFuseRevenueCat",
             .product(name: "SkipTest", package: "skip")
@@ -27,9 +34,15 @@ let package = Package(
 )
 
 if Context.environment["SKIP_BRIDGE"] ?? "0" != "0" {
-    package.dependencies += [.package(url: "https://source.skip.tools/skip-bridge.git", "0.0.0"..<"2.0.0")]
+    package.dependencies += [
+        .package(url: "https://source.skip.tools/skip-bridge.git", "0.0.0"..<"2.0.0"),
+        .package(url: "https://source.skip.tools/skip-fuse-ui.git", from: "1.0.0")
+    ]
     package.targets.forEach({ target in
-        target.dependencies += [.product(name: "SkipBridge", package: "skip-bridge")]
+        target.dependencies += [
+            .product(name: "SkipBridge", package: "skip-bridge"),
+            .product(name: "SkipFuseUI", package: "skip-fuse-ui")
+        ]
     })
     // all library types must be dynamic to support bridging
     package.products = package.products.map({ product in
