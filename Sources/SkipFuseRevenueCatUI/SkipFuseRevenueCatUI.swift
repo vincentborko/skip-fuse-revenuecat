@@ -25,15 +25,18 @@ public struct RCFusePaywallView: View {
     let offering: RCFuseOffering?
     let onPurchaseCompleted: ((String) -> Void)?  // Returns customer user ID
     let onRestoreCompleted: ((String) -> Void)?   // Returns customer user ID
+    let onDismiss: (() -> Void)?  // Called when dialog is manually dismissed (X button or outside tap)
 
     public init(
         offering: RCFuseOffering? = nil,
         onPurchaseCompleted: ((String) -> Void)? = nil,
-        onRestoreCompleted: ((String) -> Void)? = nil
+        onRestoreCompleted: ((String) -> Void)? = nil,
+        onDismiss: (() -> Void)? = nil
     ) {
         self.offering = offering
         self.onPurchaseCompleted = onPurchaseCompleted
         self.onRestoreCompleted = onRestoreCompleted
+        self.onDismiss = onDismiss
     }
 
     #if !SKIP
@@ -61,6 +64,11 @@ public struct RCFusePaywallView: View {
         // Set offering if provided - use the native offering from RCFuseOffering
         if let offering {
             builder = builder.setOffering(offering.offering)
+        }
+
+        // Set dismiss request callback - called when user manually closes dialog (X button or outside tap)
+        if let onDismiss {
+            builder = builder.setDismissRequest { onDismiss() }
         }
 
         let options = builder.build()
