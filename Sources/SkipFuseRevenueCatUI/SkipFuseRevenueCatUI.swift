@@ -10,8 +10,8 @@ import com.revenuecat.purchases.CustomerInfo
 import com.revenuecat.purchases.Offering
 import com.revenuecat.purchases.Purchases
 import com.revenuecat.purchases.models.StoreTransaction
-import com.revenuecat.purchases.ui.revenuecatui.PaywallDialog
-import com.revenuecat.purchases.ui.revenuecatui.PaywallDialogOptions
+import com.revenuecat.purchases.ui.revenuecatui.Paywall
+import com.revenuecat.purchases.ui.revenuecatui.PaywallOptions
 import com.revenuecat.purchases.ui.revenuecatui.PaywallListener
 #endif
 
@@ -19,13 +19,15 @@ import com.revenuecat.purchases.ui.revenuecatui.PaywallListener
 
 /// SwiftUI/Compose view wrapper for RevenueCat Paywall
 ///
-/// This view presents a paywall UI using RevenueCat's native paywall components.
+/// This view presents a fullscreen paywall UI using RevenueCat's native paywall components.
+/// - iOS: Uses PaywallView presented in a sheet or fullScreenCover
+/// - Android: Uses Paywall composable (fullscreen, not dialog)
 /// Callbacks provide the customer's user ID after purchase/restore completion.
 public struct RCFusePaywallView: View {
     let offering: RCFuseOffering?
     let onPurchaseCompleted: ((String) -> Void)?  // Returns customer user ID
     let onRestoreCompleted: ((String) -> Void)?   // Returns customer user ID
-    let onDismiss: (() -> Void)?  // Called when dialog is manually dismissed (X button or outside tap)
+    let onDismiss: (() -> Void)?  // Called when user dismisses paywall (X button tap)
 
     public init(
         offering: RCFuseOffering? = nil,
@@ -58,17 +60,14 @@ public struct RCFusePaywallView: View {
     #else
     // SKIP @nobridge
     @Composable override func ComposeContent(context: ComposeContext) {
-        // Build options with offering if available
-        var builder = PaywallDialogOptions.Builder()
+        // Build fullscreen paywall options
+        // PaywallOptions.Builder requires dismissRequest as constructor parameter
+        let dismissCallback = onDismiss ?? {}
+        var builder = PaywallOptions.Builder(dismissCallback)
 
         // Set offering if provided - use the native offering from RCFuseOffering
         if let offering {
             builder = builder.setOffering(offering.offering)
-        }
-
-        // Set dismiss request callback - called when user manually closes dialog (X button or outside tap)
-        if let onDismiss {
-            builder = builder.setDismissRequest { onDismiss() }
         }
 
         // Set listener for purchase/restore events
@@ -90,8 +89,11 @@ public struct RCFusePaywallView: View {
             // SKIP INSERT: builder = builder.setListener(listener)
         }
 
+        // Enable dismiss button (X) for fullscreen paywall
+        builder = builder.setShouldDisplayDismissButton(true)
+
         let options = builder.build()
-        PaywallDialog(paywallDialogOptions: options)
+        Paywall(options)
     }
     #endif
 }
