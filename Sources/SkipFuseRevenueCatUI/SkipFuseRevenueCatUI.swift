@@ -71,6 +71,25 @@ public struct RCFusePaywallView: View {
             builder = builder.setDismissRequest { onDismiss() }
         }
 
+        // Set listener for purchase/restore events
+        if onPurchaseCompleted != nil || onRestoreCompleted != nil {
+            // SKIP INSERT: val listener = object : PaywallListener {
+            // SKIP INSERT:     override fun onPurchaseCompleted(customerInfo: CustomerInfo, storeTransaction: StoreTransaction) {
+            if let onPurchaseCompleted {
+                // SKIP INSERT:         onPurchaseCompleted(customerInfo.originalAppUserId)
+                onPurchaseCompleted("") // Placeholder for Swift compilation
+            }
+            // SKIP INSERT:     }
+            // SKIP INSERT:     override fun onRestoreCompleted(customerInfo: CustomerInfo) {
+            if let onRestoreCompleted {
+                // SKIP INSERT:         onRestoreCompleted(customerInfo.originalAppUserId)
+                onRestoreCompleted("") // Placeholder for Swift compilation
+            }
+            // SKIP INSERT:     }
+            // SKIP INSERT: }
+            // SKIP INSERT: builder = builder.setListener(listener)
+        }
+
         let options = builder.build()
         PaywallDialog(paywallDialogOptions: options)
     }
