@@ -89,8 +89,8 @@ public struct RCFusePaywallView: View {
             // SKIP INSERT: builder = builder.setListener(listener)
         }
 
-        // Enable dismiss button (X) for fullscreen paywall
-        builder = builder.setShouldDisplayDismissButton(true)
+        // Disable built-in dismiss button - we'll add our own in the wrapper with proper positioning
+        builder = builder.setShouldDisplayDismissButton(false)
 
         let options = builder.build()
         Paywall(options)
