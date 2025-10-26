@@ -13,6 +13,12 @@ import com.revenuecat.purchases.models.StoreTransaction
 import com.revenuecat.purchases.ui.revenuecatui.Paywall
 import com.revenuecat.purchases.ui.revenuecatui.PaywallOptions
 import com.revenuecat.purchases.ui.revenuecatui.PaywallListener
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.background
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 #endif
 
 // MARK: - Paywall View Wrapper
@@ -89,10 +95,19 @@ public struct RCFusePaywallView: View {
             // SKIP INSERT: builder = builder.setListener(listener)
         }
 
-        // Disable built-in dismiss button - we'll add our own in the wrapper with proper positioning
-        builder = builder.setShouldDisplayDismissButton(false)
+        // Enable built-in dismiss button
+        builder = builder.setShouldDisplayDismissButton(true)
 
         let options = builder.build()
+
+        // SKIP REPLACE: Box(
+        // SKIP REPLACE:     modifier = Modifier
+        // SKIP REPLACE:         .fillMaxSize()
+        // SKIP REPLACE:         .background(Color(0xFF20003C)) // Dark purple background to match paywall
+        // SKIP REPLACE:         .systemBarsPadding()
+        // SKIP REPLACE: ) {
+        // SKIP REPLACE:     Paywall(options)
+        // SKIP REPLACE: }
         Paywall(options)
     }
     #endif
